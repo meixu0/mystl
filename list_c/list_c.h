@@ -1,0 +1,144 @@
+#ifndef LIST_C_H
+#define LIST_C_H
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct Node Node;
+typedef struct List List;
+
+struct Node{
+    Node *next, *prev;
+    void* data;
+};
+struct List{
+    Node *head;
+    size_t sz;
+};
+
+static inline void init(List* list){
+    Node *node = malloc(sizeof *node);
+    node->data = NULL;
+    list->head = node;
+    list->head->next = list->head;
+    list->head->prev = list->head;
+    list->sz = 0;
+}
+
+static inline int empty(const List* list){
+    return list->sz == 0 ? 1 : 0;
+}
+
+static inline size_t size(const List* list){
+    return list->sz;
+}
+
+void delete_node(Node* node){
+    free(node->data);
+    node->data = NULL;
+    free(node->prev);
+    node->prev = NULL;
+}
+
+static inline void delete_list(List* list){
+    if(empty(list) == 1)    return;
+    Node* tmp = malloc(sizeof *tmp);
+    tmp = list->head->next;
+    for(; tmp != list->head; tmp = tmp->next){
+        delete_node(tmp);
+    }
+    delete_node(list->head);
+    list->sz = 0;
+}
+
+static inline void push_back(List* list, void* data){
+    Node *newnode = malloc(sizeof *newnode);
+    newnode->data = data;
+    if(newnode == NULL || data == NULL) return;
+    Node* tmp = list->head->prev;
+    tmp->next = newnode;
+    newnode->prev = tmp;
+    list->head->prev = newnode;
+    newnode->next = list->head;
+    list->sz++;
+}
+static inline void push_front(List* list, void* data){
+    Node* newnode = malloc(sizeof *newnode);
+    newnode->data = data;
+    if(newnode == NULL || data == NULL) return;
+    Node* tmp = list->head->next;
+    tmp->prev = newnode;
+    newnode->next = tmp;
+    list->head->next = newnode;
+    newnode->prev = list->head;
+    list->sz++;
+}
+
+static inline void pop_back(List* list){
+    if(empty(list) == 1)    return;
+    Node* tmp = list->head->prev;
+    list->head->prev = tmp->prev;
+    tmp->prev->next = list->head;
+    list->sz--;
+    free(tmp);
+    tmp = NULL;
+}
+static inline void pop_front(List* list){
+    if(empty(list) == 1)    return;
+    Node* tmp = list->head->next;
+    list->head->next = tmp->next;
+    tmp->next->prev = list->head;
+    list->sz--;
+    free(tmp);
+    tmp = NULL;
+}
+
+static inline void insert(List* list, Node* node, void* data){
+    if(node == list->head->next){
+        push_front(list, data);
+        list->sz++;
+        return;
+    }
+    if(node->next == list->head->prev){
+        push_back(list, data);
+        list->sz++;
+        return;
+    }
+    Node* newnode = malloc(sizeof *newnode);
+    if(newnode == NULL || data == NULL) return;
+    newnode->data = data;
+    node->prev->next = newnode;
+    node->prev = newnode;
+    newnode->next = node;
+    list->sz++;
+}
+
+static inline Node* front(List* list){
+    if(empty(list) == 1)    return NULL;
+    return list->head->next;
+}
+static inline Node* back(List* list){
+    if(empty(list) == 1)    return NULL;
+    return list->head->prev;
+}
+
+static inline void erase(List* list, Node* node){
+    if(empty(list) == 1) return;
+    if(size(list) == 1) pop_back(list);
+    node->next->prev = node->prev;
+    node->prev->next = node->next;
+    free(node);
+    node = NULL;
+    list->sz--;
+}
+
+static inline Node* find(List* list, void* data){
+    Node* n = list->head->next;
+    while(n->next != list->head->next){
+        if(n->data == data) return n;
+        n = n->next;
+    }
+    return NULL;
+}
+
+#endif

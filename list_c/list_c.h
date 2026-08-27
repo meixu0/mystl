@@ -7,6 +7,9 @@
 typedef struct Node Node;
 typedef struct List List;
 
+typedef int (*compare)(const void *a, const void *b) ;
+typedef void (*destory_node)(void*) ;
+
 struct Node{
     Node *next, *prev;
     void* data;
@@ -14,15 +17,17 @@ struct Node{
 struct List{
     Node *head;
     size_t sz;
+    destory_node destory;
 };
 
-static inline void init(List* list){
+static inline void init(List* list, destory_node destory){
     Node *node = malloc(sizeof *node);
     node->data = NULL;
     list->head = node;
     list->head->next = list->head;
     list->head->prev = list->head;
     list->sz = 0;
+    list->destory = destory;
 }
 
 static inline int empty(const List* list){
@@ -33,21 +38,26 @@ static inline size_t size(const List* list){
     return list->sz;
 }
 
-void delete_node(Node* node){
-    free(node->data);
-    node->data = NULL;
-    free(node->prev);
-    node->prev = NULL;
+void delete_node(List* list, Node* node, destory_node destory){
+    if(node == NULL || node == list->head)  return;
+    node->prev->next = node->next;
+    node->next->prev = node->prev;
+    if(list->destory != NULL)   destory(node);
+    free(node);
+    list->sz--;
 }
 
-static inline void delete_list(List* list){
+static inline void delete_list(List* list, destory_node destory){
     if(empty(list) == 1)    return;
     Node* tmp = malloc(sizeof *tmp);
     tmp = list->head->next;
-    for(; tmp != list->head; tmp = tmp->next){
-        delete_node(tmp);
+    while(tmp != list->head){
+        Node* nextnode = tmp;
+        tmp = tmp->next;
+        destory(nextnode);
+        free(nextnode);
+        list->sz--;
     }
-    delete_node(list->head);
     list->sz = 0;
 }
 
@@ -74,21 +84,23 @@ static inline void push_front(List* list, void* data){
     list->sz++;
 }
 
-static inline void pop_back(List* list){
-    if(empty(list) == 1)    return;
+static inline Node* pop_back(List* list){
+    if(empty(list) == 1)    return NULL;
     Node* tmp = list->head->prev;
     list->head->prev = tmp->prev;
     tmp->prev->next = list->head;
     list->sz--;
+    return tmp;
     free(tmp);
     tmp = NULL;
 }
-static inline void pop_front(List* list){
-    if(empty(list) == 1)    return;
+static inline Node* pop_front(List* list){
+    if(empty(list) == 1)    return NULL;
     Node* tmp = list->head->next;
     list->head->next = tmp->next;
     tmp->next->prev = list->head;
     list->sz--;
+    return tmp;
     free(tmp);
     tmp = NULL;
 }
@@ -122,20 +134,25 @@ static inline Node* back(List* list){
     return list->head->prev;
 }
 
-static inline void erase(List* list, Node* node){
+static inline void erase(List* list, void* data, int (*compare)(const void *a, const void *b)){
     if(empty(list) == 1) return;
     if(size(list) == 1) pop_back(list);
-    node->next->prev = node->prev;
-    node->prev->next = node->next;
-    free(node);
-    node = NULL;
-    list->sz--;
-}
-
-static inline Node* find(List* list, void* data){
     Node* n = list->head->next;
     while(n->next != list->head->next){
-        if(n->data == data) return n;
+        if(compare(data, n->data) == 1){
+            n->next->prev = n->prev;
+            n->prev->next = n->next;
+            list->sz--;
+            return;
+        }
+        n = n->next;
+    }
+}
+
+static inline Node* find(List* list, void* data, int (*compare)(const void *a, const void *b)){
+    Node* n = list->head->next;
+    while(n->next != list->head->next){
+        if(compare(data, n->data) == 1) return n;
         n = n->next;
     }
     return NULL;

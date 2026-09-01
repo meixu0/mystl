@@ -2,8 +2,8 @@
 // 记录原问题与修复方式。主要修复编译失败、越界读写、长度溢出、别名失效
 // 及 string_view 范围错误，同时统一缩进与头文件保护宏。
 
-#ifndef STRING_CODEX_HPP
-#define STRING_CODEX_HPP
+#ifndef STRING_HPP
+#define STRING_HPP
 
 #include <algorithm>
 #include <cassert>
@@ -43,8 +43,8 @@ public:
   static constexpr size_type SSO_CAPACITY = 22;
   // BUG/FIX: 原实现把 64 位常量硬编码为堆标志，在 32 位平台会截断。
   // 使用 size_type 的最高位，并验证 SSO 容量不会占用其标志位。
-  static constexpr size_type HEAP_FLAG =
-      size_type{1} << (sizeof(size_type) * 8 - 1);
+  static constexpr size_type HEAP_FLAG = size_type{1}
+                                         << (sizeof(size_type) * 8 - 1);
   static_assert(SSO_CAPACITY < 0x80, "SSO size must not use the flag bit");
 
   string(const char *str = nullptr) {
@@ -274,7 +274,7 @@ public:
     }
   }
 
-  void swap(string & other) noexcept {
+  void swap(string &other) noexcept {
     if (is_sso() && other.is_sso()) {
       auto tmp = _sso;
       _sso = other._sso;
@@ -355,9 +355,7 @@ public:
     return *this;
   }
 
-  friend void swap(string & lstring, string & rstring) {
-    lstring.swap(rstring);
-  }
+  friend void swap(string &lstring, string &rstring) { lstring.swap(rstring); }
 
   bool operator==(const string &other) const {
     if (this == &other) {
@@ -427,8 +425,7 @@ public:
     return is;
   }
 
-  friend std::istream &getline(std::istream & is, string & s,
-                               char delim = '\n') {
+  friend std::istream &getline(std::istream &is, string &s, char delim = '\n') {
     s.clear();
     char buf[256];
     size_type cnt = 0;
@@ -505,8 +502,7 @@ public:
     return *this;
   }
 
-  std::optional<size_type> find(const string &substr, size_type pos = 0)
-      const {
+  std::optional<size_type> find(const string &substr, size_type pos = 0) const {
     if (pos > size()) {
       return std::nullopt;
     }

@@ -2,9 +2,7 @@
 #define VECTOR_HPP
 
 #include <algorithm>
-#include <cstring>
 #include <iterator>
-#include <locale>
 #include <memory>
 #include <stdexcept>
 #include <utility>
@@ -22,35 +20,43 @@ public:
   using difference_type = ptrdiff_t;
   using const_void_ptr = const void *;
   using Traits = std::allocator_traits<Allocator>;
+  [[no_unique_address]] Allocator alloc;
   vector() {
-    _heap._ptr = Traits::allocate(alloc, 1);
+    _heap._ptr = nullptr;
     _heap._cap = 0;
     _heap._size = 0;
   }
   explicit vector(size_type count) {
-    _heap._ptr = Traits::allocate(alloc, count + 1);
+    _heap._ptr = Traits::allocate(alloc, count);
+    for (size_type i = 0; i < count; ++i)
+      Traits::construct(alloc, _heap._ptr + i);
     _heap._size = count;
     _heap._cap = count;
   }
   vector(size_type count, const_value_type value) {
-    _heap._ptr = Traits::allocate(alloc, count + 1);
+    _heap._ptr = Traits::allocate(alloc, count);
     _heap._size = count;
     _heap._cap = count;
-    memset(_heap._ptr, value, count * sizeof(value_type));
+    for (size_type i = 0; i < count; ++i)
+      Traits::construct(alloc, _heap._ptr + i, value);
   }
   vector(const vector &source) {
     size_type count = source.size();
     _heap._ptr = Traits::allocate(alloc, count + 1);
     // memcpy(_heap._ptr, source.data(), (count + 1) * sizeof(value_type));
-    for (size_type i = 0; i <= count + 1; i++)
-      Traits::construct(alloc, _heap._ptr + i, std::move(source._heap._ptr[i]));
+    for (size_type i = 0; i < count; i++)
+      Traits::construct(alloc, _heap._ptr + i, source._heap._ptr[i]);
     _heap._size = count;
     _heap._cap = count;
   }
-  vector(vector &&source) { _heap = source._heap; }
+  vector(vector &&source) {
+    _heap = source._heap;
+    alloc = source.alloc;
+    source._heap = {nullptr, 0, 0};
+  }
 
   void reserve(size_type count) {
-    if (capacity() > count)
+    if (capacity() >= count)
       return;
     pointer newV = Traits::allocate(alloc, count + 1);
     size_type sz = size();
@@ -59,22 +65,26 @@ public:
       Traits::construct(alloc, newV + i, std::move(_heap._ptr[i]));
       Traits::destroy(alloc, _heap._ptr + i);
     }
-    Traits::deallocate(alloc, _heap._ptr, cap + 1);
+    if (_heap._ptr != nullptr)
+      Traits::deallocate(alloc, _heap._ptr, cap + 1);
     _heap._ptr = newV;
     _heap._cap = count;
   }
 
   void push_back(value_type value) {
-    if (size() + 1 >= capacity())
-      reserve(capacity() + 1);
+    if (capacity() == 0)
+      reserve(1);
+    if (size() == capacity())
+      reserve(capacity() * 2);
     Traits::construct(alloc, _heap._ptr + size(), value);
     _heap._size++;
   }
 
   void pop_back() {
     if (empty())
-      return;
-    _heap._ptr[size() - 1].~value_type();
+      throw std::runtime_error("empty vector");
+    //_heap._ptr[size() - 1].~value_type();
+    Traits::destroy(alloc, _heap._ptr + (size() - 1));
     _heap._size--;
   }
 
@@ -88,7 +98,8 @@ public:
   void clear() {
     if (empty())
       return;
-    for (size_type i = 0; i < size(); ++i) {
+    size_type sz = size();
+    for (size_type i = 0; i < sz; ++i) {
       Traits::destroy(alloc, _heap._ptr + i);
       _heap._size--;
     }
@@ -99,7 +110,12 @@ public:
   using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
-  ~vector() noexcept { Traits::deallocate(alloc, _heap._ptr, capacity() + 1); }
+  ~vector() noexcept {
+    clear();
+    if (_heap._ptr != nullptr)
+      Traits::deallocate(alloc, _heap._ptr, capacity());
+    _heap._ptr = nullptr;
+  }
 
   pointer data() { return _heap._ptr; }
   const_pointer data() const { return _heap._ptr; }
@@ -141,68 +157,98 @@ public:
   const_reverse_iterator crend() const {
     return const_reverse_iterator(begin());
   }
-  reference front() { return reference(data()); }
-  const_reference front() const { return const_reference(data()); }
+  reference front() { return reference(*data()); }
+  const_reference front() const { return const_reference(*data()); }
 
   iterator erase(const_iterator first, const_iterator last) {
     if (first < cbegin() || last > cend() || first > last) {
       throw std::out_of_range("invalid iterator");
     }
     if (first == last) {
-      size_type idx = first - cbegin();
+      /*size_type idx = first - cbegin();
       for (; idx < size() - 1; ++idx) {
         Traits::destroy(alloc, data() + idx);
-        Traits::construct(alloc, data() + idx, data() + idx + 1);
-      }
-      _heap._size--;
-      return iterator(data() + idx);
+        Traits::construct(alloc, data() + idx, data()[idx + 1]);*/
+      return data() + (first - cbegin());
     }
+    //_heap._size--;
+    // return iterator(data() + idx);
+
     size_type idxl = first - cbegin();
     size_type idxr = last - cbegin();
     for (size_type idx = idxl; idx < size() - (idxr - idxl); ++idx) {
       Traits::destroy(alloc, data() + idx);
-      Traits::construct(alloc, data() + idx, data() + idx + idxr - idxl);
+      Traits::construct(alloc, data() + idx, data()[idx + idxr - idxl]);
     }
-    _heap._size - (idxr - idxl);
+    size_type sz = size();
+    _heap._size -= (idxr - idxl);
+    for (size_type i = size(); i < sz; ++i) {
+      Traits::destroy(alloc, data() + i);
+    }
     return iterator(data() + idxl);
   }
 
-  iterator erase(const_iterator pos) { return (erase(pos, pos)); }
+  iterator erase(const_iterator pos) { return (erase(pos, pos + 1)); }
 
   iterator insert(const_iterator pos, const_reference value) {
-    if (pos >= cend())
+    if (pos > cend())
       throw std::out_of_range("invalid iterator");
     size_type idx = pos - cbegin();
-    pointer tmp = Traits::allocate(alloc, capacity() + 1);
+    pointer tmp = Traits::allocate(
+        alloc, ((size() + 1 > capacity()) ? capacity() : capacity() + 1));
     for (size_type i = 0; i < idx; ++i) {
-      Traits::construct(alloc, tmp + i, data() + i);
+      Traits::construct(alloc, tmp + i, data()[i]);
     }
     Traits::construct(alloc, tmp + idx, value);
-    for (size_type i = idx + 1; i < size(); ++i) {
-      Traits::construct(alloc, tmp + i + 1, data() + i);
+    for (size_type i = idx; i < size(); ++i) {
+      Traits::construct(alloc, tmp + i + 1, data()[i]);
     }
     for (size_type i = 0; i < size(); ++i) {
       Traits::destroy(alloc, data() + i);
     }
+    size_type cap = capacity();
     if (size() + 1 >= capacity())
       ++_heap._cap;
     ++_heap._size;
+    Traits::deallocate(alloc, _heap._ptr, cap);
     _heap._ptr = tmp;
     return iterator(data() + idx);
   }
-  iterator insert(const_reference pos, Type &&value) {
-    return iterator(insert(pos, std::forward<value_type>(value)));
+  iterator insert(const_iterator pos, Type &&value) {
+    return iterator(insert(pos, static_cast<const_reference>(value)));
   }
   void insert(const_iterator pos, size_type cnt, const_reference value) {
-    for (size_type i = 0; i < cnt; ++i)
-      insert(pos, value);
+    if (pos > cend())
+      throw std::out_of_range("invalid iterator");
+    size_type idx = pos - cbegin();
+    pointer tmp = Traits::allocate(alloc, capacity() + cnt);
+    for (size_type i = 0; i < idx; ++i) {
+      Traits::construct(alloc, tmp + i, data()[i]);
+    }
+    for (size_type i = 0; i < cnt; ++i) {
+      Traits::construct(alloc, tmp + idx + i, value);
+    }
+    for (size_type i = idx; i < size(); ++i) {
+      Traits::construct(alloc, tmp + cnt + i, data()[i]);
+    }
+    for (size_type i = 0; i < size(); ++i) {
+      Traits::destroy(alloc, data() + i);
+    }
+    size_type cap = capacity();
+    if (size() + cnt + 1 >= capacity())
+      _heap._cap = size() + cnt;
+    _heap._size = size() + cnt;
+    Traits::deallocate(alloc, _heap._ptr, cap);
+    _heap._ptr = tmp;
+    // return iterator(data() + idx);
   }
 
   void resize(size_type sz) {
     if (sz == size())
       return;
     if (sz < size()) {
-      for (size_type i = sz; i < size(); ++i) {
+      size_type curSize = size();
+      for (size_type i = sz; i < curSize; ++i) {
         Traits::destroy(alloc, data() + i);
         _heap._size--;
       }
@@ -210,14 +256,20 @@ public:
     }
     if (sz >= capacity())
       reserve(sz);
+    for (size_type i = size(); i < sz; ++i)
+      Traits::construct(alloc, data() + i);
     _heap._size = sz;
   }
   void resize(size_type sz, value_type value) {
-    if (sz <= size())
+    if (sz <= size()) {
       resize(sz);
+      return;
+    }
     if (sz >= capacity())
       reserve(sz);
-    for (size_type i = size(); i <= sz; ++i) {
+    for (size_type i = size(); i < sz; ++i)
+      Traits::construct(alloc, data() + i);
+    for (size_type i = size(); i < sz; ++i) {
       _heap._ptr[i] = value;
     }
     _heap._size = sz;
@@ -225,13 +277,14 @@ public:
 
   void swap(vector<value_type, Allocator> &other) {
     std::swap(_heap, other._heap);
+    std::swap(alloc, other.alloc);
   }
   friend void swap(vector<value_type, Allocator> &lvec,
                    vector<value_type, Allocator> &rvec) {
     lvec.swap(rvec);
   }
 
-  size_type max_size() const { return capacity(); }
+  size_type max_size() const { return Traits::max_size(alloc); }
 
 private:
   struct HeapStorage {
@@ -239,7 +292,7 @@ private:
     size_type _size;
     size_type _cap;
   } _heap;
-  [[no_unique_address]] Allocator alloc;
+  //[[no_unique_address]] Allocator alloc;
 };
 } // namespace my_std
 #endif
